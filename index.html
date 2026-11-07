@@ -169,10 +169,12 @@
     $("statustext").textContent = statusText;
   }
 
-  // ---------- Lenkwinkel aus der Schwerkraft
+  // ---------- Lenkwinkel: Gyroskop (schnell, egal wie schräg) + Schwerkraft (gegen Abdriften)
   let gx = 0, gy = 0, hatWert = false;
-  let letzterRoh = null, kumuliert = 0, mitte = 0, mitteSetzen = true;
-  let winkel = 0;
+  let kumuliert = null, mitte = 0, mitteSetzen = true;
+  let winkel = 0, letzteZeit_m = null, letzterRoh = null;
+  let gyroVorzeichen = 1, vorzeichenPunkte = 0, fensterGyro = 0, fensterSchwer = 0, fensterZeit = 0;
+  const wrap = (d) => ((d + 540) % 360) - 180;
 
   function bewegung(e) {
     const a = e.accelerationIncludingGravity;
@@ -180,14 +182,44 @@
     const k = 1 - E.glatt;
     if (!hatWert) { gx = a.x; gy = a.y; hatWert = true; }
     else { gx += (a.x - gx) * k; gy += (a.y - gy) * k; }
-    // Liegt das Handy fast flach, ist der Winkel unzuverlässig: letzten Wert halten
-    if (Math.hypot(gx, gy) < 2.5) return;
+    const staerke = Math.hypot(gx, gy);          // ~9.8 senkrecht, ~0 flach
     const roh = Math.atan2(gx, gy) * 180 / Math.PI;
-    if (letzterRoh === null) { letzterRoh = roh; kumuliert = 0; }
-    let d = roh - letzterRoh;
-    if (d > 180) d -= 360; else if (d < -180) d += 360;
+
+    // Zeit seit dem letzten Messwert
+    const t = e.timeStamp || performance.now();
+    const dt = letzteZeit_m === null ? 0 : Math.min(0.1, Math.max(0, (t - letzteZeit_m) / 1000));
+    letzteZeit_m = t;
+
+    const r = e.rotationRate;
+    const hatGyro = r && r.alpha != null;
+    const gyroDelta = hatGyro ? r.alpha * dt * gyroVorzeichen : 0;
+
+    if (kumuliert === null) {
+      if (staerke < 2 && !hatGyro) return;         // ohne Gyroskop braucht der Start eine schräge Haltung
+      kumuliert = staerke < 2 ? 0 : roh; letzterRoh = roh;
+    } else if (hatGyro) {
+      // Gyroskop-Richtung einmalig mit der Schwerkraft abgleichen (Handys melden es unterschiedlich)
+      // (über 0,4-s-Fenster verglichen, damit Rauschen nicht stört)
+      if (staerke > 1.5 && vorzeichenPunkte < 6) {
+        fensterGyro += gyroDelta; fensterSchwer += wrap(roh - letzterRoh); fensterZeit += dt;
+        if (fensterZeit > 0.4) {
+          if (Math.abs(fensterGyro) > 8 && Math.abs(fensterSchwer) > 8) {
+            if (Math.sign(fensterGyro) === Math.sign(fensterSchwer)) vorzeichenPunkte++;
+            else { gyroVorzeichen *= -1; kumuliert += -2 * fensterGyro; vorzeichenPunkte = 0; }
+          }
+          fensterGyro = fensterSchwer = fensterZeit = 0;
+        }
+      }
+      kumuliert += gyroDelta;
+      // Langsam zur Schwerkraft hinziehen – je flacher, desto weniger (flach: nur Gyroskop)
+      const vertrauen = Math.max(0, Math.min(1, (staerke - 2) / 6));
+      if (vertrauen > 0) kumuliert += wrap(roh - kumuliert) * 0.04 * vertrauen;
+    } else {
+      // Ohne Gyroskop: nur Schwerkraft (braucht steilere Haltung)
+      if (staerke < 2.5) return;
+      kumuliert += wrap(roh - letzterRoh);
+    }
     letzterRoh = roh;
-    kumuliert += d;
     if (mitteSetzen) { mitte = kumuliert; mitteSetzen = false; }
     let w = mitte - kumuliert;
     if (E.umkehr) w = -w;
