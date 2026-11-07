@@ -18,7 +18,7 @@
          padding:max(10px,env(safe-area-inset-top)) max(10px,env(safe-area-inset-right))
                  max(10px,env(safe-area-inset-bottom)) max(10px,env(safe-area-inset-left)); }
   .pedal { border-radius:18px; border:2px solid var(--rand); display:flex; flex-direction:column;
-           align-items:center; justify-content:center; font-weight:700; font-size:clamp(16px,4vh,28px);
+           align-items:center; justify-content:center; font-weight:700; font-size:clamp(16px,4cqh,28px);
            letter-spacing:.05em; position:relative; overflow:hidden; touch-action:none; }
   .pedal span { position:relative; z-index:1; }
   .pedal small { position:relative; z-index:1; font-weight:400; font-size:12px; color:var(--leise); margin-top:4px; }
@@ -28,13 +28,13 @@
   .mitte { display:flex; flex-direction:column; align-items:center; justify-content:space-between; min-width:0; }
   .leiste { display:flex; gap:8px; width:100%; justify-content:center; flex-wrap:wrap; }
   .knopf { background:var(--panel); border:1px solid var(--rand); color:var(--text); border-radius:12px;
-           min-width:52px; height:clamp(36px,11vh,52px); padding:0 12px; font-size:15px; font-weight:600;
+           min-width:52px; height:clamp(36px,11cqh,52px); padding:0 12px; font-size:15px; font-weight:600;
            display:flex; align-items:center; justify-content:center; touch-action:none; }
   .knopf.an { background:var(--akzent); border-color:var(--akzent); color:#000; }
   .knopf.klein { height:34px; font-size:13px; font-weight:500; }
-  #rad { width:min(100%,46vh); aspect-ratio:1; flex:0 1 auto; }
+  #rad { width:min(100%,46cqh); aspect-ratio:1; flex:0 1 auto; }
   #radsvg { width:100%; height:100%; transition:transform .03s linear; }
-  #anzeige { font-size:clamp(18px,6vh,34px); font-weight:700; font-variant-numeric:tabular-nums; }
+  #anzeige { font-size:clamp(18px,6cqh,34px); font-weight:700; font-variant-numeric:tabular-nums; }
   #status { font-size:12px; color:var(--leise); display:flex; align-items:center; gap:6px; }
   .punkt { width:9px; height:9px; border-radius:50%; background:var(--bremse); }
   .punkt.ok { background:var(--gas); }
@@ -55,11 +55,17 @@
   .schnell button { flex:1; min-width:56px; padding:10px 0; border-radius:10px; border:1px solid var(--rand);
                     background:var(--panel); color:var(--text); font-size:15px; font-weight:600; }
   .schnell button.an { background:var(--akzent); border-color:var(--akzent); color:#000; }
-  #hochkant { display:none; }
-  @media (orientation:portrait) { #hochkant { display:flex; } }
+  /* Ist die Drehsperre an (Handy meldet Hochformat), wird die Ansicht selbst quer gedreht */
+  #dreh { position:fixed; inset:0; container-type:size; }
+  #dreh.gedreht { inset:auto; top:0; left:0; width:100vh; height:100vw; transform-origin:top left; }
+  #dreh.gedreht.rechts { transform:rotate(90deg) translateY(-100%); }
+  #dreh.gedreht.links { transform:rotate(-90deg) translateX(-100%); }
+  #dreh.kopf { transform:rotate(180deg); }
+  .dreh-knopf { background:none; border:1px solid var(--rand); color:var(--leise); border-radius:10px; padding:8px 14px; font-size:14px; }
 </style>
 </head>
 <body>
+<div id="dreh">
 <div id="app">
   <div class="pedal" id="bremse"><div class="fuell"></div><span>BREMSE</span><small>LT</small></div>
 
@@ -102,13 +108,10 @@
   <input id="code" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="CODE"
          style="font-size:28px;letter-spacing:.3em;text-align:center;width:220px;padding:10px;border-radius:12px;border:2px solid #30363d;background:#161b22;color:#e6edf3;text-transform:uppercase">
   <button class="gross" id="los">Starten</button>
-  <p>Danach Handy quer halten wie ein Lenkrad, Bildschirm zu dir.</p>
+  <p>Danach Handy quer halten wie ein Lenkrad, Bildschirm zu dir.<br>
+     Tipp: Schalte am Handy die automatische Bildschirmdrehung aus, dann springt beim Lenken nichts um.</p>
+  <button class="dreh-knopf ansicht-drehen">⟲ Steht auf dem Kopf? Ansicht drehen</button>
   <p id="startfehler" style="color:#f85149"></p>
-</div>
-
-<div class="overlay" id="hochkant">
-  <h1>Handy quer halten</h1>
-  <p>Dreh das Handy ins Querformat. Tipp: Bildschirm-Drehsperre ausschalten.</p>
 </div>
 
 <div class="overlay" id="einst">
@@ -124,7 +127,9 @@
   <label>Glättung: <b id="glattWert"></b>
     <input type="range" id="glatt" min="0" max="0.9" step="0.05"></label>
   <label class="zeile"><input type="checkbox" id="umkehr"> Lenkrichtung umkehren</label>
+  <button class="dreh-knopf ansicht-drehen">⟲ Ansicht auf den Kopf drehen</button>
   <button class="gross" id="fertig">Fertig</button>
+</div>
 </div>
 
 <script>
@@ -281,7 +286,8 @@
       }
     } catch (e) { $("startfehler").textContent = "Sensor-Fehler: " + e.message; return; }
     try { await document.documentElement.requestFullscreen?.({ navigationUI: "hide" }); } catch (_) {}
-    try { await screen.orientation?.lock?.("landscape"); } catch (_) {}
+    // nur EINE Querlage erlauben, sonst kippt das Bild beim Lenken um 180°
+    try { await screen.orientation?.lock?.("landscape-primary"); } catch (_) {}
     wachHalten();
     window.addEventListener("devicemotion", bewegung);
     mitteSetzen = true;
@@ -314,6 +320,22 @@
   try { $("code").value = (ausUrl || localStorage.getItem("lenkrad-code") || "").toUpperCase(); } catch (_) {}
   $("code").addEventListener("input", () => { try { localStorage.setItem("lenkrad-code", $("code").value.toUpperCase()); } catch (_) {} });
   if (ausUrl) { try { localStorage.setItem("lenkrad-code", ausUrl.toUpperCase()); } catch (_) {} }
+  // ---------- Ansicht immer quer
+  let aufKopf = false;
+  try { aufKopf = localStorage.getItem("lenkrad-kopf") === "1"; } catch (_) {}
+  function ansicht() {
+    const hoch = window.innerHeight > window.innerWidth;
+    const d = $("dreh");
+    d.className = hoch ? "gedreht " + (aufKopf ? "links" : "rechts") : (aufKopf ? "kopf" : "");
+  }
+  document.querySelectorAll(".ansicht-drehen").forEach((b) => b.addEventListener("click", () => {
+    aufKopf = !aufKopf; try { localStorage.setItem("lenkrad-kopf", aufKopf ? "1" : "0"); } catch (_) {}
+    ansicht();
+  }));
+  window.addEventListener("resize", ansicht);
+  window.addEventListener("orientationchange", () => setTimeout(ansicht, 200));
+  ansicht();
+
   zeigeWerte(); status(); requestAnimationFrame(schleife);
 })();
 </script>
