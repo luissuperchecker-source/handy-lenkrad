@@ -182,17 +182,29 @@
     try { peer?.destroy(); } catch (_) {}
     zeigeCode();
     netz("Verbinde mit dem Internet…", "warte");
-    peer = new Peer("hlenkrad-" + code, PEER_OPTS);
-    peer.on("open", () => netz("Bereit – warte auf Handy", "ok"));
-    peer.on("disconnected", () => { netz("Verbindung unterbrochen – versuche neu…", "warte");
-      setTimeout(() => { try { peer.reconnect(); } catch (_) { starten(); } }, 1500); });
-    peer.on("error", (e) => {
-      if (e.type === "unavailable-id") { code = neuerCode(); starten(); return; }
+    const p = peer = new Peer("hlenkrad-" + code, PEER_OPTS);
+    p.on("open", () => { if (p !== peer) return; belegt = 0; netz("Bereit – warte auf Handy", "ok"); });
+    p.on("disconnected", () => {
+      if (p !== peer || p.destroyed) return;          // alte oder absichtlich beendete Verbindung
+      netz("Verbindung unterbrochen – versuche neu…", "warte");
+      setTimeout(() => { if (p !== peer) return; try { p.reconnect(); } catch (_) { starten(); } }, 1500);
+    });
+    p.on("error", (e) => {
+      if (p !== peer) return;
+      if (e.type === "unavailable-id") {
+        // Nach einem Neuladen ist der alte Code oft noch kurz belegt: Code behalten und warten,
+        // damit das Handy ihn weiter findet. Erst nach ~30 s einen neuen Code nehmen.
+        if (belegt < 10) { belegt++; netz("Code wird noch freigegeben – einen Moment…", "warte");
+          peer = null; try { p.destroy(); } catch (_) {} setTimeout(starten, 3000); }
+        else { belegt = 0; code = neuerCode(); starten(); }
+        return;
+      }
       if (e.type === "peer-unavailable") return;
       netz("Fehler: " + e.type + " – versuche neu…", "");
+      peer = null; try { p.destroy(); } catch (_) {}
       setTimeout(starten, 3000);
     });
-    peer.on("connection", (c) => {
+    p.on("connection", (c) => {
       c.on("open", () => { c._zuletzt = performance.now(); handys.add(c); aktiv = c; handyStatus(); });
       c.on("data", (d) => {
         c._zuletzt = performance.now();
@@ -209,9 +221,23 @@
       c.on("close", weg); c.on("error", weg);
     });
   }
-  $("neuCode").addEventListener("click", () => { code = neuerCode(); starten(); });
+  let belegt = 0;
+  $("neuCode").addEventListener("click", () => { belegt = 0; code = neuerCode(); kanal?.postMessage("neu"); starten(); });
   window.addEventListener("beforeunload", () => { try { peer?.destroy(); } catch (_) {} });
-  starten();
+
+  // Nur EINE PC-Seite soll aktiv sein: öffnet man sie in einem weiteren Tab, gibt der alte Tab auf.
+  let kanal = null;
+  try { kanal = new BroadcastChannel("handy-lenkrad-pc"); } catch (_) {}
+  if (kanal) kanal.onmessage = (m) => {
+    if (m.data !== "neu") return;
+    try { peer?.destroy(); } catch (_) {}
+    peer = null;
+    document.body.innerHTML = `<main style="display:block;text-align:center;padding:80px 16px">
+      <h1>Handy-<span>Lenkrad</span></h1>
+      <p style="color:#8b949e;font-size:18px">Die Lenkrad-Seite ist in einem anderen Tab geöffnet. Diesen Tab kannst du schließen.</p></main>`;
+  };
+  kanal?.postMessage("neu");
+  setTimeout(starten, kanal ? 300 : 0);   // kurz warten, bis ein alter Tab seinen Code freigegeben hat
 </script>
 </body>
 </html>
