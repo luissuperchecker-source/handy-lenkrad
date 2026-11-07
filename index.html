@@ -355,11 +355,19 @@
   // ---------- Ansicht immer quer
   let aufKopf = false;
   try { aufKopf = localStorage.getItem("lenkrad-kopf") === "1"; } catch (_) {}
+  // Dreht das Handy-System den Bildschirm, drehen wir die Ansicht genau zurück.
+  // So bleibt das Bild für dich immer in derselben Lage zum Handy.
   function ansicht() {
     const hoch = window.innerHeight > window.innerWidth;
-    const d = $("dreh");
-    d.className = hoch ? "gedreht " + (aufKopf ? "links" : "rechts") : (aufKopf ? "kopf" : "");
+    let a = screen.orientation?.angle;
+    if (a == null && typeof window.orientation === "number") a = window.orientation;  // ältere iPhones
+    a = ((Number(a) || 0) % 360 + 360) % 360;
+    if ((a % 180 === 0) !== hoch) a = hoch ? 0 : 90;   // Winkel passt nicht zur Fenstergröße (z. B. PC)
+    const ziel = aufKopf ? 270 : 90;                     // gewünschte Lage: Handy quer, Oberseite links
+    const r = ((ziel - a) % 360 + 360) % 360;
+    $("dreh").className = { 0: "", 90: "gedreht rechts", 180: "kopf", 270: "gedreht links" }[r];
   }
+  screen.orientation?.addEventListener?.("change", () => setTimeout(ansicht, 50));
   document.querySelectorAll(".ansicht-drehen").forEach((b) => b.addEventListener("click", () => {
     aufKopf = !aufKopf; try { localStorage.setItem("lenkrad-kopf", aufKopf ? "1" : "0"); } catch (_) {}
     ansicht();
