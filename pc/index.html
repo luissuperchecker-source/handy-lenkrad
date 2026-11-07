@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Handy-Lenkrad</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<style>
+  :root { --bg:#0d1117; --panel:#161b22; --rand:#30363d; --text:#e6edf3; --leise:#8b949e;
+          --gas:#2ea043; --bremse:#da3633; --akzent:#f0883e; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font-family:system-ui,"Segoe UI",Roboto,sans-serif; }
+  main { max-width:1000px; margin:0 auto; padding:32px 16px; display:grid; grid-template-columns:340px 1fr; gap:24px; }
+  @media (max-width:760px) { main { grid-template-columns:1fr; } }
+  h1 { grid-column:1/-1; margin:0; font-size:28px; }
+  h1 span { color:var(--akzent); }
+  .karte { background:var(--panel); border:1px solid var(--rand); border-radius:14px; padding:20px; }
+  .karte h2 { margin:0 0 12px; font-size:16px; color:var(--leise); font-weight:600; }
+  #qr { background:#fff; padding:14px; border-radius:10px; width:fit-content; margin:0 auto 12px; }
+  #code { font-family:ui-monospace,Consolas,monospace; font-size:40px; font-weight:700; letter-spacing:.25em;
+          text-align:center; color:var(--akzent); margin:4px 0; }
+  #url { text-align:center; font-size:14px; color:var(--leise); }
+  ol { padding-left:20px; margin:14px 0 0; line-height:1.6; color:var(--leise); font-size:14px; }
+  ol b { color:var(--text); }
+  .live { display:grid; grid-template-columns:1fr auto; gap:24px; align-items:center; }
+  #rad { width:100%; max-width:300px; margin:0 auto; display:block; }
+  #grad { text-align:center; font-size:40px; font-weight:700; font-variant-numeric:tabular-nums; margin-top:8px; }
+  .pedale { display:flex; gap:18px; height:220px; }
+  .p { width:46px; display:flex; flex-direction:column; align-items:center; gap:6px; font-size:12px; color:var(--leise); }
+  .rohr { flex:1; width:100%; background:#0d1117; border:1px solid var(--rand); border-radius:8px; position:relative; overflow:hidden; }
+  .rohr div { position:absolute; left:0; right:0; bottom:0; height:0; }
+  #gasB { background:var(--gas); } #bremsB { background:var(--bremse); }
+  .achse { margin-top:18px; height:10px; background:#0d1117; border:1px solid var(--rand); border-radius:5px; position:relative; }
+  #achseF { position:absolute; top:0; bottom:0; left:50%; background:var(--akzent); }
+  .tasten { display:flex; gap:6px; margin-top:16px; flex-wrap:wrap; justify-content:center; }
+  .tasten span { padding:4px 10px; border-radius:6px; border:1px solid var(--rand); font-size:13px; color:var(--leise); }
+  .tasten span.an { background:var(--akzent); color:#000; border-color:var(--akzent); }
+  .zeile { display:flex; align-items:center; gap:8px; margin-bottom:8px; font-size:14px; }
+  .punkt { width:10px; height:10px; border-radius:50%; background:var(--bremse); flex:none; }
+  .punkt.ok { background:var(--gas); }
+  .punkt.warte { background:#d29922; }
+  .warnung { background:#3d1d1d; border:1px solid #6e2b2b; border-radius:10px; padding:12px; font-size:14px; line-height:1.5; margin-top:10px; }
+  .warnung a { color:var(--akzent); }
+  .tipps { grid-column:1/-1; color:var(--leise); font-size:14px; line-height:1.6; }
+  .tipps b { color:var(--text); }
+  button.neu { background:none; border:1px solid var(--rand); color:var(--leise); border-radius:8px; padding:4px 10px; cursor:pointer; font-size:12px; display:block; margin:8px auto 0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Handy-<span>Lenkrad</span></h1>
+
+  <section class="karte">
+    <h2>Mit dem Handy verbinden</h2>
+    <div id="qr"></div>
+    <div id="code">······</div>
+    <div id="url">luissuperchecker-source.github.io/handy-lenkrad</div>
+    <button class="neu" id="neuCode">Neuen Code erzeugen</button>
+    <ol>
+      <li>QR-Code mit dem Handy scannen<br>oder die Adresse darüber öffnen und den Code eingeben.</li>
+      <li><b>Starten</b> tippen.</li>
+      <li>Handy quer halten wie ein Lenkrad, Bildschirm zu dir.</li>
+    </ol>
+  </section>
+
+  <section class="karte">
+    <h2>Live</h2>
+    <div class="zeile"><div class="punkt" id="pNetz"></div><span id="tNetz">Verbinde mit dem Internet…</span></div>
+    <div class="zeile"><div class="punkt" id="pHandy"></div><span id="tHandy">Kein Handy verbunden</span></div>
+    <div class="zeile"><div class="punkt" id="pPad"></div><span id="tPad">Controller wird geprüft…</span></div>
+    <div id="padFehler"></div>
+    <div class="live">
+      <div>
+        <svg id="rad" viewBox="0 0 200 200"><g id="radsvg" style="transform-origin:100px 100px">
+          <circle cx="100" cy="100" r="88" fill="none" stroke="#30363d" stroke-width="16"/>
+          <rect x="94" y="4" width="12" height="20" rx="3" fill="#f0883e"/>
+          <path d="M100 100 L18 108 M100 100 L182 108 M100 100 L100 186" stroke="#30363d" stroke-width="14" stroke-linecap="round"/>
+          <circle cx="100" cy="100" r="24" fill="#161b22" stroke="#30363d" stroke-width="4"/>
+        </g></svg>
+        <div id="grad">0°</div>
+        <div class="achse"><div id="achseF"></div></div>
+      </div>
+      <div class="pedale">
+        <div class="p"><div class="rohr"><div id="bremsB"></div></div>Bremse</div>
+        <div class="p"><div class="rohr"><div id="gasB"></div></div>Gas</div>
+      </div>
+    </div>
+    <div class="tasten" id="tasten"></div>
+  </section>
+
+  <div class="tipps">
+    <b>Wichtig:</b> Lass diese Seite und das schwarze Programm-Fenster offen, solange du spielst. Die Seite darf im Hintergrund sein.<br>
+    <b>Im Spiel:</b> Das Handy erscheint als Xbox-360-Controller. Lenken = linker Stick, Gas = rechter Trigger (RT), Bremse = linker Trigger (LT), Gänge = LB/RB.
+    Stell im Spiel die Lenk-Totzone auf 0 und die Lenkung auf linear. Den Lenkbereich (Standard: 180° je Richtung) stellst du auf dem Handy unter „Einstellungen“ ein.
+  </div>
+</main>
+
+<script>
+  const HANDY_URL = "https://luissuperchecker-source.github.io/handy-lenkrad";
+  const PEER_OPTS = { config: { iceServers: [{ urls: "stun:stun.l.google.com:19302" },
+    { urls: "stun:stun1.l.google.com:19302" }, { urls: "stun:global.stun.twilio.com:3478" }] } };
+  const $ = (id) => document.getElementById(id);
+  const NAMEN = { lb: "LB", rb: "RB", a: "A", b: "B", x: "X", y: "Y", start: "Start" };
+  $("tasten").innerHTML = Object.entries(NAMEN).map(([k, n]) => `<span data-k="${k}">${n}</span>`).join("");
+  const LEER = { x: 0, g: 0, b: 0, t: [], w: 0, r: 180 };
+
+  // ---------- Controller-Programm (läuft auf diesem PC, auch wenn die Seite aus dem Internet kommt)
+  const PROGRAMM = "127.0.0.1:8080";
+  let ws = null;
+  function programmVerbinden() {
+    ws = new WebSocket(`ws://${PROGRAMM}/ws`);
+    ws.onopen = () => {
+      fetch(`http://${PROGRAMM}/info`).then((r) => r.json()).then((i) => {
+        $("pPad").classList.toggle("ok", i.pad);
+        $("tPad").textContent = i.pad ? "Virtueller Xbox-Controller aktiv" : "Kein virtueller Controller";
+        $("padFehler").innerHTML = i.pad ? "" : `<div class="warnung">Der Treiber <b>ViGEmBus</b> fehlt. Installiere ihn von
+          <a href="https://github.com/nefarius/ViGEmBus/releases" target="_blank" rel="noopener">github.com/nefarius/ViGEmBus</a>
+          und starte das Programm neu.</div>`;
+      }).catch(() => {});
+    };
+    ws.onclose = () => {
+      $("pPad").classList.remove("ok");
+      $("tPad").textContent = "Lenkrad-Programm läuft nicht";
+      $("padFehler").innerHTML = `<div class="warnung">Starte auf diesem PC das Lenkrad-Programm
+        (<b>Lenkrad-starten.bat</b>). Nur das Programm kann dem Spiel einen Xbox-Controller vortäuschen.
+        Diese Seite verbindet sich dann von selbst.</div>`;
+      setTimeout(programmVerbinden, 1500);
+    };
+  }
+  programmVerbinden();
+
+  // ---------- Anzeige
+  function anzeigen(z) {
+    $("radsvg").style.transform = `rotate(${z.w}deg)`;
+    $("grad").textContent = `${z.w > 0 ? "+" : ""}${Math.round(z.w)}° / ±${Math.round(z.r)}°`;
+    const f = $("achseF");
+    f.style.left = (z.x < 0 ? 50 + z.x * 50 : 50) + "%";
+    f.style.width = Math.abs(z.x) * 50 + "%";
+    $("gasB").style.height = z.g * 100 + "%";
+    $("bremsB").style.height = z.b * 100 + "%";
+    document.querySelectorAll("#tasten span").forEach((s) => s.classList.toggle("an", z.t.includes(s.dataset.k)));
+  }
+  let letzteDaten = 0, losgelassen = true;
+  function weiter(z) {
+    if (ws && ws.readyState === 1) ws.send(JSON.stringify(z));
+    anzeigen(z);
+  }
+  // Sicherheit: kommt 1 Sekunde nichts vom Handy, alles loslassen
+  setInterval(() => {
+    if (!losgelassen && performance.now() - letzteDaten > 1000) { losgelassen = true; weiter(LEER); }
+    // nach 4 Sekunden Stille gilt das Handy als getrennt
+    for (const c of handys) if (performance.now() - (c._zuletzt || 0) > 4000) { try { c.close(); } catch (_) {} c._weg?.(); }
+  }, 300);
+
+  // ---------- Code + Direktverbindung zum Handy
+  const ZEICHEN = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const neuerCode = () => Array.from({ length: 6 }, () => ZEICHEN[Math.floor(Math.random() * ZEICHEN.length)]).join("");
+  let code = "";
+  try { code = localStorage.getItem("lenkrad-pc-code") || ""; } catch (_) {}
+  if (!/^[A-Z0-9]{6}$/.test(code)) code = neuerCode();
+
+  let peer = null, aktiv = null;
+  const handys = new Set();
+  function zeigeCode() {
+    try { localStorage.setItem("lenkrad-pc-code", code); } catch (_) {}
+    $("code").textContent = code;
+    $("qr").innerHTML = "";
+    const link = `${HANDY_URL}/?c=${code}`;
+    if (window.QRCode) new QRCode($("qr"), { text: link, width: 220, height: 220, correctLevel: QRCode.CorrectLevel.M });
+    else $("qr").style.display = "none";
+  }
+  function handyStatus() {
+    $("pHandy").classList.toggle("ok", handys.size > 0);
+    $("tHandy").textContent = handys.size > 0 ? "Handy verbunden" : "Kein Handy verbunden";
+  }
+  function netz(text, art) {
+    $("pNetz").className = "punkt " + (art || "");
+    $("tNetz").textContent = text;
+  }
+  function starten() {
+    try { peer?.destroy(); } catch (_) {}
+    zeigeCode();
+    netz("Verbinde mit dem Internet…", "warte");
+    peer = new Peer("hlenkrad-" + code, PEER_OPTS);
+    peer.on("open", () => netz("Bereit – warte auf Handy", "ok"));
+    peer.on("disconnected", () => { netz("Verbindung unterbrochen – versuche neu…", "warte");
+      setTimeout(() => { try { peer.reconnect(); } catch (_) { starten(); } }, 1500); });
+    peer.on("error", (e) => {
+      if (e.type === "unavailable-id") { code = neuerCode(); starten(); return; }
+      if (e.type === "peer-unavailable") return;
+      netz("Fehler: " + e.type + " – versuche neu…", "");
+      setTimeout(starten, 3000);
+    });
+    peer.on("connection", (c) => {
+      c.on("open", () => { c._zuletzt = performance.now(); handys.add(c); aktiv = c; handyStatus(); });
+      c.on("data", (d) => {
+        c._zuletzt = performance.now();
+        if (c !== aktiv || !d || typeof d !== "object") return;
+        letzteDaten = performance.now(); losgelassen = false;
+        weiter({ ...LEER, ...d });
+      });
+      const weg = () => {
+        if (!handys.delete(c)) return;
+        if (aktiv === c) { aktiv = [...handys].pop() || null; weiter(LEER); }
+        handyStatus();
+      };
+      c._weg = weg;
+      c.on("close", weg); c.on("error", weg);
+    });
+  }
+  $("neuCode").addEventListener("click", () => { code = neuerCode(); starten(); });
+  window.addEventListener("beforeunload", () => { try { peer?.destroy(); } catch (_) {} });
+  starten();
+</script>
+</body>
+</html>
