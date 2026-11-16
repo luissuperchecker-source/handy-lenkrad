@@ -173,8 +173,25 @@
   let gx = 0, gy = 0, hatWert = false;
   let kumuliert = null, mitte = 0, mitteSetzen = true;
   let winkel = 0, letzteZeit_m = null, letzterRoh = null;
-  let gyroVorzeichen = 1, vorzeichenPunkte = 0, fensterGyro = 0, fensterSchwer = 0, fensterZeit = 0;
+  // Umrechnung Gyroskop -> Grad. Wird automatisch eingemessen, weil Handys/Browser
+  // es unterschiedlich melden (Grad/s oder Bogenmaß/s, Richtung umgedreht).
+  let gyroFaktor = 1;
+  try { const f = parseFloat(localStorage.getItem("lenkrad-gyro")); if (Math.abs(f) >= 0.5 && Math.abs(f) <= 80) gyroFaktor = f; } catch (_) {}
+  let fensterGyro = 0, fensterStart = null, fensterZeit = 0, letzterRohRoh = null, fensterSchwer = 0;
+  const verhaeltnisse = [];
   const wrap = (d) => ((d + 540) % 360) - 180;
+  function faktorLernen(v) {
+    if (!isFinite(v) || Math.abs(v) < 0.3 || Math.abs(v) > 120) return;
+    verhaeltnisse.push(v); if (verhaeltnisse.length > 7) verhaeltnisse.shift();
+    if (verhaeltnisse.length < 3) return;
+    const m = [...verhaeltnisse].sort((x, y) => x - y)[Math.floor(verhaeltnisse.length / 2)];
+    let f = m;
+    if (Math.abs(Math.abs(m) - 1) < 0.35) f = Math.sign(m);                     // Grad/s
+    else if (Math.abs(Math.abs(m) - 57.2958) < 20) f = Math.sign(m) * 57.2958; // Bogenmaß/s
+    if (Math.abs(f - gyroFaktor) > 0.05 * Math.abs(gyroFaktor)) {
+      gyroFaktor = f; try { localStorage.setItem("lenkrad-gyro", String(f)); } catch (_) {}
+    }
+  }
 
   function bewegung(e) {
     const a = e.accelerationIncludingGravity;
@@ -185,35 +202,37 @@
     const staerke = Math.hypot(gx, gy);          // ~9.8 senkrecht, ~0 flach
     const roh = Math.atan2(gx, gy) * 180 / Math.PI;
 
-    // Zeit seit dem letzten Messwert
-    const t = e.timeStamp || performance.now();
+    // Zeit seit dem letzten Messwert (eigene Uhr – manche Browser liefern gleiche Zeitstempel)
+    const t = performance.now();
     const dt = letzteZeit_m === null ? 0 : Math.min(0.1, Math.max(0, (t - letzteZeit_m) / 1000));
     letzteZeit_m = t;
 
     const r = e.rotationRate;
     const hatGyro = r && r.alpha != null;
-    const gyroDelta = hatGyro ? r.alpha * dt * gyroVorzeichen : 0;
+    const rohGyro = hatGyro ? r.alpha * dt : 0;          // ungeeichter Wert
+    const gyroDelta = rohGyro * gyroFaktor;             // in Grad
 
     if (kumuliert === null) {
       if (staerke < 2 && !hatGyro) return;         // ohne Gyroskop braucht der Start eine schräge Haltung
       kumuliert = staerke < 2 ? 0 : roh; letzterRoh = roh;
     } else if (hatGyro) {
-      // Gyroskop-Richtung einmalig mit der Schwerkraft abgleichen (Handys melden es unterschiedlich)
-      // (über 0,4-s-Fenster verglichen, damit Rauschen nicht stört)
-      if (staerke > 1.5 && vorzeichenPunkte < 6) {
-        fensterGyro += gyroDelta; fensterSchwer += wrap(roh - letzterRoh); fensterZeit += dt;
+      // Einmessen: in 0,4-s-Abschnitten Gyroskop mit der (ungefilterten) Schwerkraft vergleichen
+      const staerkeRoh = Math.hypot(a.x, a.y), winkelRoh = Math.atan2(a.x, a.y) * 180 / Math.PI;
+      if (staerkeRoh > 4) {
+        if (letzterRohRoh !== null) fensterSchwer += wrap(winkelRoh - letzterRohRoh);
+        letzterRohRoh = winkelRoh; fensterGyro += rohGyro; fensterZeit += dt;
         if (fensterZeit > 0.4) {
-          if (Math.abs(fensterGyro) > 8 && Math.abs(fensterSchwer) > 8) {
-            if (Math.sign(fensterGyro) === Math.sign(fensterSchwer)) vorzeichenPunkte++;
-            else { gyroVorzeichen *= -1; kumuliert += -2 * fensterGyro; vorzeichenPunkte = 0; }
-          }
+          if (Math.abs(fensterSchwer) > 15 && Math.abs(fensterGyro) > 1e-3) faktorLernen(fensterSchwer / fensterGyro);
           fensterGyro = fensterSchwer = fensterZeit = 0;
         }
-      }
+      } else { letzterRohRoh = null; fensterGyro = fensterSchwer = fensterZeit = 0; }
+
       kumuliert += gyroDelta;
-      // Langsam zur Schwerkraft hinziehen – je flacher, desto weniger (flach: nur Gyroskop)
+      // Zur Schwerkraft hinziehen – je flacher, desto weniger (flach: nur Gyroskop).
+      // Hält man still, rastet es schnell ein; beim Drehen nur sanft (gegen Zittern).
       const vertrauen = Math.max(0, Math.min(1, (staerke - 2) / 6));
-      if (vertrauen > 0) kumuliert += wrap(roh - kumuliert) * 0.04 * vertrauen;
+      const still = Math.abs(gyroDelta) < 8 * dt + 1e-6;   // langsamer als 8°/s
+      if (vertrauen > 0) kumuliert += wrap(roh - kumuliert) * (still ? 0.1 : 0.04) * vertrauen;
     } else {
       // Ohne Gyroskop: nur Schwerkraft (braucht steilere Haltung)
       if (staerke < 2.5) return;
