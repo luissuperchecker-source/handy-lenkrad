@@ -376,20 +376,47 @@
   try { aufKopf = localStorage.getItem("lenkrad-kopf") === "1"; } catch (_) {}
   // Dreht das Handy-System den Bildschirm, drehen wir die Ansicht genau zurück.
   // So bleibt das Bild für dich immer in derselben Lage zum Handy.
-  function ansicht() {
+  // Wie weit das System gedreht hat, messen wir selbst über die Lenkbewegung (kumuliert),
+  // weil iPhone und Android die Lage-Angabe unterschiedlich melden.
+  const mod = (x) => ((x % 360) + 360) % 360;
+  let rJetzt = null, basisRoll = null, letzteLage = null;
+  function osLage() {
     const hoch = window.innerHeight > window.innerWidth;
     let a = screen.orientation?.angle;
     if (a == null && typeof window.orientation === "number") a = window.orientation;  // ältere iPhones
-    a = ((Number(a) || 0) % 360 + 360) % 360;
-    if ((a % 180 === 0) !== hoch) a = hoch ? 0 : 90;   // Winkel passt nicht zur Fenstergröße (z. B. PC)
-    const ziel = aufKopf ? 270 : 90;                     // gewünschte Lage: Handy quer, Oberseite links
-    const r = ((ziel - a) % 360 + 360) % 360;
-    $("dreh").className = { 0: "", 90: "gedreht rechts", 180: "kopf", 270: "gedreht links" }[r];
+    return { hoch, a: mod(Number(a) || 0) };
   }
+  function setzen(r) {
+    rJetzt = mod(r);
+    $("dreh").className = { 0: "", 90: "gedreht rechts", 180: "kopf", 270: "gedreht links" }[rJetzt];
+  }
+  function ansicht() {
+    const { hoch, a } = osLage();
+    const lage = (hoch ? "H" : "Q") + a;
+    if (lage === letzteLage && rJetzt !== null) return;   // nichts hat sich gedreht
+    const braucht90 = hoch;                               // Hochformat-Fenster -> Ansicht um 90° drehen
+    if (rJetzt !== null && letzteLage !== null && kumuliert !== null && basisRoll !== null) {
+      // Das System hat um 90° (hoch <-> quer) oder 180° (quer <-> quer) gedreht.
+      // In welche Richtung, verrät unsere eigene Messung: d > 0 = gegen den Uhrzeigersinn gedreht.
+      const d = kumuliert - basisRoll;
+      const schritt = (letzteLage[0] === "H") !== hoch ? 90 : 180;
+      let r = mod(rJetzt - (d < 0 ? -1 : 1) * schritt);
+      if ((r % 180 === 90) !== braucht90) r = mod(r + 90);   // Sicherheitsnetz, sollte nie nötig sein
+      setzen(r);
+    } else {
+      // Noch keine Bewegungsdaten: nach der Lage-Angabe des Browsers richten
+      let w = a;
+      if ((w % 180 === 0) !== hoch) w = hoch ? 0 : 90;    // Angabe passt nicht zur Fenstergröße (z. B. PC)
+      setzen((aufKopf ? 270 : 90) - w);
+    }
+    letzteLage = lage; basisRoll = kumuliert;
+  }
+  // Sobald die Sensoren laufen: Ausgangslage merken
+  setInterval(() => { if (basisRoll === null && kumuliert !== null) basisRoll = kumuliert; }, 200);
   screen.orientation?.addEventListener?.("change", () => setTimeout(ansicht, 50));
   document.querySelectorAll(".ansicht-drehen").forEach((b) => b.addEventListener("click", () => {
     aufKopf = !aufKopf; try { localStorage.setItem("lenkrad-kopf", aufKopf ? "1" : "0"); } catch (_) {}
-    ansicht();
+    setzen((rJetzt ?? 0) + 180);
   }));
   window.addEventListener("resize", ansicht);
   window.addEventListener("orientationchange", () => setTimeout(ansicht, 200));
